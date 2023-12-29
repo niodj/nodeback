@@ -2,27 +2,35 @@ const express = require("express");
 const mongoose = require("mongoose");
 const app = express();
 const cors = require("cors");
-const http = require("http").createServer(app);
-const io = require("socket.io")(http, { cors: { origin: "*" } });
 app.use(cors());
-
-http.listen(4444, () => {
-  console.log(`Server is running on port ${4444}`);
-});
-
-app.get("/", (req, res) => {
-  res.send("Hello, Express!");
-});
+const server = require("http").createServer(app);
 
 ///////вебсокеты
+const io = require("socket.io")(server, { cors: { origin: "*" } });
+
+const messageHistory = [];
+
 io.on("connection", (socket) => {
-  console.log("Connection made successfully");
+  // Отправка истории сообщений при подключении
+  socket.emit("chatData", { messageHistory });
+
   socket.on("message", (payload) => {
-    console.log("Message received on server:", payload);
-    io.emit("message", payload);
+    // Сохранение сообщения в истории
+    messageHistory.push(payload);
+
+    // Рассылка сообщения всем клиентам
+    io.emit("chatData", { messageHistory, newMessage: payload });
+  });
+
+  // обработчик для очистки чата
+  socket.on("clearChat", () => {
+    // Очистка истории сообщений
+    messageHistory.length = 0;
+
+    // Рассылка события об очистке чата всем клиентам
+    io.emit("chatCleared");
   });
 });
-
 
 // Подключение к базе данных
 mongoose.connect(
@@ -90,6 +98,11 @@ const User = mongoose.model("User", userSchema);
 
 // Парсинг JSON
 app.use(express.json());
+
+// проверка сервака
+app.get("/test", async (req, res) => {
+  res.status(200).json("hi");
+});
 
 // Маршрут для получения списка тудулистов, связанных с конкретным пользователем
 app.get("/todolists/:email", authenticateToken, async (req, res) => {
@@ -267,7 +280,7 @@ app.post("/tasks/:todoid", authenticateToken, async (req, res) => {
     }
 
     const newTask = new Tasks({ taskid, name, checked });
-    todoList.tasks.push(newTask);
+    todoList.tasks.unshift(newTask);
     await todoList.save();
 
     res.status(201).json({ message: "Задача успешно добавлена" });
@@ -479,11 +492,7 @@ app.post("/logout", async (req, res) => {
     res.status(500).json({ message: "Ошибка при выходе пользователя" });
   }
 });
-
 module.exports = router;
-
-
-/*
-yarn add --dev typescript запуск
-
-*/
+server.listen(4444, () => {
+  console.log(`Server is running on port ${4444}`);
+});
